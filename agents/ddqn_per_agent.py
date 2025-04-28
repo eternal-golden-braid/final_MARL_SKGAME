@@ -192,9 +192,9 @@ class StackelbergDDQNPERAgent(BaseAgent):
         self.t_step = 0
     
     def compute_stackelberg_equilibrium(self, state: np.ndarray, 
-                                       action_masks: Optional[Dict[str, np.ndarray]] = None) -> Tuple[int, int, int]:
+                                  action_masks: Optional[Dict[str, np.ndarray]] = None) -> Tuple[int, int, int]:
         """
-        Compute Stackelberg equilibrium using the current Q-networks.
+        Compute Stackelberg equilibrium using the current networks.
         In this hierarchy: Leader -> (Follower1, Follower2)
         
         Args:
@@ -204,21 +204,52 @@ class StackelbergDDQNPERAgent(BaseAgent):
         Returns:
             Leader action, follower1 action, and follower2 action
         """
-        state_tensor = torch.FloatTensor(state).to(self.device)
+        # Ensure state is a tensor and properly shaped for network input
+        if isinstance(state, np.ndarray):
+            state_tensor = torch.FloatTensor(state).to(self.device)
+            # Add batch dimension if needed
+            if len(state_tensor.shape) == 1:
+                state_tensor = state_tensor.unsqueeze(0)
+        else:
+            # If already a tensor, ensure it's on the right device
+            state_tensor = state.to(self.device)
+            if len(state_tensor.shape) == 1:
+                state_tensor = state_tensor.unsqueeze(0)
         
         # Process action masks if provided
         if action_masks is not None:
-            leader_mask, follower1_mask, follower2_mask = self.process_action_mask(action_masks)
+            if isinstance(action_masks, dict):
+                # If action_masks is a dictionary
+                leader_mask = torch.tensor(action_masks['leader'], dtype=torch.bool, device=self.device)
+                follower1_mask = torch.tensor(action_masks['follower1'], dtype=torch.bool, device=self.device)
+                follower2_mask = torch.tensor(action_masks['follower2'], dtype=torch.bool, device=self.device)
+            else:
+                # If already processed by another method
+                leader_mask, follower1_mask, follower2_mask = action_masks
         else:
+            # If no masks provided, all actions are valid
             leader_mask = torch.ones(self.action_dim_leader, dtype=torch.bool, device=self.device)
             follower1_mask = torch.ones(self.action_dim_follower1, dtype=torch.bool, device=self.device)
             follower2_mask = torch.ones(self.action_dim_follower2, dtype=torch.bool, device=self.device)
         
         # Get Q-values for all possible actions
         with torch.no_grad():
-            leader_q_values = self.leader_online(state_tensor)
-            follower1_q_values = self.follower1_online(state_tensor)
-            follower2_q_values = self.follower2_online(state_tensor)
+            # Different getter methods for different agent types
+            if hasattr(self.leader_online, 'get_q_values'):
+                # For C51 agent
+                leader_q_values = self.leader_online.get_q_values(state_tensor)
+                follower1_q_values = self.follower1_online.get_q_values(state_tensor)
+                follower2_q_values = self.follower2_online.get_q_values(state_tensor)
+            elif hasattr(self, 'leader_hidden'):
+                # For DRQN agent
+                leader_q_values, _ = self.leader_online.get_q_values(state_tensor, self.leader_hidden)
+                follower1_q_values, _ = self.follower1_online.get_q_values(state_tensor, self.follower1_hidden)
+                follower2_q_values, _ = self.follower2_online.get_q_values(state_tensor, self.follower2_hidden)
+            else:
+                # For DQN/DDQN agent
+                leader_q_values = self.leader_online(state_tensor)
+                follower1_q_values = self.follower1_online(state_tensor)
+                follower2_q_values = self.follower2_online(state_tensor)
         
         # Apply action masks
         leader_q_values = self.apply_action_mask(leader_q_values, leader_mask)
@@ -226,32 +257,52 @@ class StackelbergDDQNPERAgent(BaseAgent):
         follower2_q_values = self.apply_action_mask(follower2_q_values, follower2_mask)
         
         # Convert to numpy for easier manipulation
-        leader_q = leader_q_values.detach().cpu().numpy()
-        follower1_q = follower1_q_values.detach().cpu().numpy()
-        follower2_q = follower2_q_values.detach().cpu().numpy()
+        leader_q = leader_q_values.cpu().numpy()
+        follower1_q = follower1_q_values.cpu().numpy()
+        follower2_q = follower2_q_values.cpu().numpy()
         
-        # For each potential leader action, compute the Nash equilibrium between the followers
+        # Make sure q values are the right shape (batch_size, action_dim)
+        if len(leader_q.shape) == 1:
+            leader_q = leader_q.reshape(1, -1)
+        if len(follower1_q.shape) == 1:
+            follower1_q = follower1_q.reshape(1, -1)
+        if len(follower2_q.shape) == 1:
+            follower2_q = follower2_q.reshape(1, -1)
+        
+        # Convert masks to numpy
+        leader_mask_np = leader_mask.cpu().numpy()
+        follower1_mask_np = follower1_mask.cpu().numpy()
+        follower2_mask_np = follower2_mask.cpu().numpy()
+        
+        # Find the best action for the leader by simulating followers' responses
         best_leader_value = float('-inf')
         leader_se_action = 0
         follower1_se_action = 0
         follower2_se_action = 0
         
+        # Loop through all possible leader actions
         for a_l in range(self.action_dim_leader):
-            if not leader_mask[a_l].item():
+            if not leader_mask_np[a_l]:
                 continue  # Skip invalid leader actions
-                
+            
             # Initialize with a suboptimal solution
             f1_action, f2_action = 0, 0
             
             # Simple iterative best response for the followers' subgame
-            for _ in range(10):  # Few iterations usually converge
+            for _ in range(5):  # Few iterations usually converge
                 # Follower 1's best response to current follower 2's action
-                valid_f1_actions = np.where(follower1_mask.cpu().numpy())[0]
-                f1_best_response = valid_f1_actions[np.argmax(follower1_q[valid_f1_actions])] if len(valid_f1_actions) > 0 else 0
+                valid_f1_actions = np.where(follower1_mask_np)[0]
+                if len(valid_f1_actions) > 0:
+                    f1_best_response = valid_f1_actions[np.argmax(follower1_q[0, valid_f1_actions])]
+                else:
+                    f1_best_response = 0
                 
                 # Follower 2's best response to updated follower 1's action
-                valid_f2_actions = np.where(follower2_mask.cpu().numpy())[0]
-                f2_best_response = valid_f2_actions[np.argmax(follower2_q[valid_f2_actions])] if len(valid_f2_actions) > 0 else 0
+                valid_f2_actions = np.where(follower2_mask_np)[0]
+                if len(valid_f2_actions) > 0:
+                    f2_best_response = valid_f2_actions[np.argmax(follower2_q[0, valid_f2_actions])]
+                else:
+                    f2_best_response = 0
                 
                 # Update actions
                 if f1_action == f1_best_response and f2_action == f2_best_response:
@@ -260,7 +311,7 @@ class StackelbergDDQNPERAgent(BaseAgent):
                 f1_action, f2_action = f1_best_response, f2_best_response
             
             # Evaluate leader's utility with this followers' equilibrium
-            leader_value = leader_q[a_l]
+            leader_value = leader_q[0, a_l]
             
             if leader_value > best_leader_value:
                 best_leader_value = leader_value
@@ -269,7 +320,15 @@ class StackelbergDDQNPERAgent(BaseAgent):
                 follower2_se_action = f2_action
         
         # Convert from index to actual action (-1 to n-2, where n is action_dim)
-        return leader_se_action - 1, follower1_se_action - 1, follower2_se_action - 1
+        # Make sure we don't go out of bounds
+        leader_action = leader_se_action - 1 if leader_se_action > 0 else -1
+        follower1_action = follower1_se_action - 1 if follower1_se_action > 0 else -1
+        follower2_action = follower2_se_action - 1 if follower2_se_action > 0 else -1
+        
+        if self.debug:
+            print(f"Leader action: {leader_action}, Follower1 action: {follower1_action}, Follower2 action: {follower2_action}")
+        
+        return leader_action, follower1_action, follower2_action
     
     def act(self, state: np.ndarray, action_masks: Optional[Dict[str, np.ndarray]] = None, 
             epsilon: Optional[float] = None) -> Tuple[int, int, int]:

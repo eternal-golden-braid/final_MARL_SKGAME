@@ -363,7 +363,7 @@ def train(args):
     start_time = time.time()
     for episode in range(start_episode, args.n_episodes):
         # Reset environment and agent
-        state, _, info = env.reset_env()
+        first_row, full_board, info = env.reset_env()
         agent.reset_hidden_states() if hasattr(agent, 'reset_hidden_states') else None
         
         # Initialize episode statistics
@@ -386,7 +386,7 @@ def train(args):
             if 'enhanced_state' in info:
                 state_to_use = info['enhanced_state']
             else:
-                state_to_use = state
+                state_to_use = first_row
             
             # Get action masks if available
             action_masks = info.get('action_masks', None)
@@ -395,11 +395,18 @@ def train(args):
             leader_action, follower1_action, follower2_action = agent.act(state_to_use, action_masks)
             
             # Take action
-            next_state, _, rl, rf1, rf2, done, info = env.step(leader_action, follower1_action, follower2_action)
+            next_first_row, next_full_board, rl, rf1, rf2, done, next_info = env.step(
+                leader_action, follower1_action, follower2_action)
+            
+            # Get next state to use
+            if 'enhanced_state' in next_info:
+                next_state_to_use = next_info['enhanced_state']
+            else:
+                next_state_to_use = next_first_row
             
             # Add to replay buffer
             experience = (state_to_use, leader_action, follower1_action, follower2_action, 
-                         rl, rf1, rf2, info.get('enhanced_state', next_state), done)
+                         rl, rf1, rf2, next_state_to_use, done)
             buffer.add(experience)
             
             # Update statistics
@@ -450,11 +457,13 @@ def train(args):
             if done:
                 break
             
-            # Update state
-            state = next_state
+            # Update state and info
+            first_row = next_first_row
+            info = next_info
         
         # End episode in buffer
-        buffer.end_episode()
+        # If we have an enhanced state, use it as the zero state
+        buffer.end_episode(zero_state=info.get('enhanced_state', None))
         
         # Close rendering if active
         if render:
@@ -495,7 +504,7 @@ def train(args):
             })
         
         # Print progress
-        if episode % 10 == 0:
+        if episode % 10 == 0 or args.debug:
             print(f"Episode {episode}/{args.n_episodes}: " +
                   f"Reward={episode_reward:.2f}, " +
                   f"L={episode_leader_reward:.2f}, " +
@@ -586,7 +595,7 @@ def evaluate(args, agent, env, n_episodes, render=False):
     # Evaluation loop
     for episode in range(n_episodes):
         # Reset environment and agent
-        state, _, info = env.reset_env()
+        first_row, full_board, info = env.reset_env()
         agent.reset_hidden_states() if hasattr(agent, 'reset_hidden_states') else None
         
         # Initialize episode statistics
@@ -608,7 +617,7 @@ def evaluate(args, agent, env, n_episodes, render=False):
             if 'enhanced_state' in info:
                 state_to_use = info['enhanced_state']
             else:
-                state_to_use = state
+                state_to_use = first_row
             
             # Get action masks if available
             action_masks = info.get('action_masks', None)
@@ -617,7 +626,8 @@ def evaluate(args, agent, env, n_episodes, render=False):
             leader_action, follower1_action, follower2_action = agent.act(state_to_use, action_masks, epsilon=0)
             
             # Take action
-            next_state, _, rl, rf1, rf2, done, info = env.step(leader_action, follower1_action, follower2_action)
+            next_first_row, next_full_board, rl, rf1, rf2, done, next_info = env.step(
+                leader_action, follower1_action, follower2_action)
             
             # Update statistics
             episode_reward += (rl + rf1 + rf2) / 3  # Average reward across agents
@@ -636,8 +646,9 @@ def evaluate(args, agent, env, n_episodes, render=False):
             if done:
                 break
             
-            # Update state
-            state = next_state
+            # Update state and info
+            first_row = next_first_row
+            info = next_info
         
         # Close rendering if active
         if render:

@@ -61,34 +61,48 @@ class SequenceReplayBuffer:
         End the current episode and transfer sequences to the main buffer.
         
         Args:
-            zero_state: Zero state to use for padding (if None, use the last experience)
+            zero_state: Zero state to use for padding (if None, use zeros of the same shape as states)
         """
         if len(self.episode_buffer) == 0:
             return
         
-        # Store the zero state if provided
-        if zero_state is not None:
+        # If zero_state not provided, create one with zeros of the same shape as the state
+        if zero_state is None:
+            if self.zero_state is None:
+                # Create a zero state based on the first state in the episode
+                # This ensures consistent shape for all padding
+                first_state = self.episode_buffer[0][0]
+                self.zero_state = np.zeros_like(first_state)
+        else:
             self.zero_state = zero_state
         
         # Add overlapping sequences from the episode to the buffer
         for i in range(max(1, len(self.episode_buffer) - self.sequence_length + 1)):
             sequence = self.episode_buffer[i:i+self.sequence_length]
             if len(sequence) < self.sequence_length:
-                # Pad shorter sequences
-                # Use the provided zero state or clone the last experience with done=False
+                # Pad shorter sequences with custom zero-state padding
                 if self.zero_state is not None:
-                    # Create a new experience with the zero state but keep done=False
-                    last_exp = list(sequence[-1])
-                    last_exp[0] = self.zero_state   # Replace state
-                    last_exp[7] = self.zero_state   # Replace next_state
-                    last_exp[-1] = False            # Set done to False
-                    
-                    padding = [tuple(last_exp)] * (self.sequence_length - len(sequence))
+                    # Create padding experiences with the zero state
+                    padding = []
+                    for _ in range(self.sequence_length - len(sequence)):
+                        # State, actions (-1 for no action), rewards (0), next_state, done=False
+                        padding_exp = (
+                            self.zero_state,  # State
+                            -1,  # Leader action
+                            -1,  # Follower1 action
+                            -1,  # Follower2 action
+                            0.0,  # Leader reward
+                            0.0,  # Follower1 reward
+                            0.0,  # Follower2 reward
+                            self.zero_state,  # Next state
+                            False  # Not done
+                        )
+                        padding.append(padding_exp)
                 else:
-                    # Clone the last experience but set done=False
-                    padding_exp = list(sequence[-1])
-                    padding_exp[-1] = False  # Set done flag to False
-                    padding = [tuple(padding_exp)] * (self.sequence_length - len(sequence))
+                    # Fallback: clone last experience but set done=False
+                    last_exp = list(sequence[-1])
+                    last_exp[-1] = False  # Set done flag to False
+                    padding = [tuple(last_exp)] * (self.sequence_length - len(sequence))
                 
                 sequence.extend(padding)
             

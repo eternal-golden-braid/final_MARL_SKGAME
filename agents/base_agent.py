@@ -139,9 +139,6 @@ class QMIXNetwork(nn.Module):
     
     Attributes:
         state_dim (int): Dimension of the state space
-        action_dim_leader (int): Dimension of the leader's action space
-        action_dim_follower1 (int): Dimension of follower1's action space
-        action_dim_follower2 (int): Dimension of follower2's action space
         hidden_size (int): Size of hidden layers
     """
     def __init__(self, state_dim: int, hidden_size: int = 64):
@@ -223,8 +220,24 @@ class QMIXNetwork(nn.Module):
         Returns:
             Joint Q-values
         """
-        # Stack agent Q-values along dim 1
-        agent_qs = torch.stack(agent_q_values, dim=1)  # [batch_size, 3]
+        # Stack agent Q-values along dim 1 (agent dimension)
+        # Handle the case where q_values might have different shapes
+        batch_size = agent_q_values[0].shape[0]
+        
+        # Reshape if needed (for sequence data)
+        reshaped_q_values = []
+        for q in agent_q_values:
+            if len(q.shape) > 2:  # If q has sequence dimension
+                reshaped_q_values.append(q.reshape(batch_size, -1))
+            else:
+                reshaped_q_values.append(q)
+        
+        # Stack along agent dimension
+        agent_qs = torch.stack(reshaped_q_values, dim=1)  # [batch_size, 3]
+        
+        # Reshape states if needed
+        if len(states.shape) > 2:  # If states has sequence dimension
+            states = states.reshape(batch_size, -1)
         
         # Forward pass through the mixing network
         return self.forward(agent_qs, states)

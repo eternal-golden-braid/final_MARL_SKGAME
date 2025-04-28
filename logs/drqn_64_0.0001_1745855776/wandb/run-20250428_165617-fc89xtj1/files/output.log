@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 917, in <module>
+    agent, stats = train(args)
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 395, in train
+    leader_action, follower1_action, follower2_action = agent.act(state_to_use, action_masks)
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 368, in act
+    return self.compute_stackelberg_equilibrium(state, action_masks)
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 234, in compute_stackelberg_equilibrium
+    leader_q_values, self.leader_hidden = self.leader_online.get_q_values(
+  File "/home/alien/anaconda3/envs/skgame/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1614, in __getattr__
+    raise AttributeError("'{}' object has no attribute '{}'".format(
+AttributeError: 'RecurrentQNetwork' object has no attribute 'get_q_values'

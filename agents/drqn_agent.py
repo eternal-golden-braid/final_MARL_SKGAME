@@ -43,7 +43,7 @@ class RecurrentQNetwork(nn.Module):
         self.hidden_size = hidden_size
         self.lstm_layers = lstm_layers
         
-        # Feature extraction layers
+        # Feature extraction layers - created once in __init__ (FIX)
         self.feature_extractor = nn.Sequential(
             nn.Linear(input_dim, hidden_size),
             nn.LeakyReLU(),
@@ -87,7 +87,7 @@ class RecurrentQNetwork(nn.Module):
         """
         batch_size, seq_len, _ = state.shape
         
-        # Extract features
+        # Extract features 
         features = self.feature_extractor(state.reshape(-1, self.input_dim))
         features = features.view(batch_size, seq_len, self.hidden_size)
         
@@ -102,29 +102,23 @@ class RecurrentQNetwork(nn.Module):
         
         return q_values, hidden_state
     
-    def get_q_values(self, state: torch.Tensor, hidden_state: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
-                    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def get_q_values(self, state: torch.Tensor) -> torch.Tensor:
         """
-        Get Q-values for a single state.
+        Convert probability distributions to Q-values.
         
         Args:
-            state: Single state tensor [state_dim] or [batch_size, state_dim]
-            hidden_state: Hidden state for LSTM
+            state: Batch of states [batch_size, state_dim]
         
         Returns:
-            Q-values and updated hidden state
+            Q-values [batch_size, action_dim]
         """
-        # Add batch and sequence dimensions if not present
-        if len(state.shape) == 1:
-            state = state.unsqueeze(0).unsqueeze(0)  # [1, 1, state_dim]
-        elif len(state.shape) == 2:
-            state = state.unsqueeze(1)  # [batch_size, 1, state_dim]
+        # Get probability distributions
+        probs = self.forward(state)
         
-        # Forward pass
-        q_values, new_hidden_state = self.forward(state, hidden_state)
+        # Expected value: Sum(p_i * z_i) for each action
+        q_values = torch.sum(probs * self.support, dim=2)
         
-        # Return last timestep's Q-values
-        return q_values[:, -1, :], new_hidden_state
+        return q_values
 
 
 class StackelbergDRQNAgent(BaseAgent):
@@ -317,6 +311,8 @@ class StackelbergDRQNAgent(BaseAgent):
         # Convert from index to actual action (-1 to n-2, where n is action_dim)
         # Note: This assumes the first action (index 0) corresponds to "do nothing" (-1)
         return leader_se_action - 1, follower1_se_action - 1, follower2_se_action - 1
+    
+     
         
     def act(self, state: np.ndarray, action_masks: Optional[Dict[str, np.ndarray]] = None, 
             epsilon: Optional[float] = None) -> Tuple[int, int, int]:

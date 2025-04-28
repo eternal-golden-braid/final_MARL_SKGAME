@@ -337,6 +337,142 @@ class BatteryDisassemblyEnv:
         ])
         
         return enhanced_state
+
+    def step(self, al: int, af1: int, af2: int) -> Tuple[np.ndarray, np.ndarray, float, float, float, bool, Dict]:
+        """
+        Execute one step in the environment based on all three robots' actions.
+        
+        Args:
+            al: Leader action (Franka robot), -1 for "do nothing"
+            af1: Follower 1 action (UR10 robot), -1 for "do nothing"
+            af2: Follower 2 action (Kuka robot), -1 for "do nothing"
+        
+        Returns:
+            Tuple containing:
+            - First row of the updated board
+            - Complete updated board
+            - Reward for the leader
+            - Reward for follower 1
+            - Reward for follower 2
+            - Whether the episode is done
+            - Dictionary with additional information
+        """
+        # Get the current state before acting
+        first_row, full_board = self.get_current_state()
+        
+        # Store initial number of completed tasks
+        initial_completed_tasks = len(self.completed_tasks)
+        
+        # Simulate if task is completed by the leader (Franka)
+        if al == -1:
+            tl, tl_done = 0, False  # Leader does nothing
+        else:
+            if 0 <= al < self.curr_board.shape[1]:  # Check if action is valid
+                tl = self.curr_board[0, al]
+                if tl == 0:
+                    tl_done = False  # Task already completed or invalid
+                else:
+                    # Check if task is within Franka's capabilities and workspace
+                    if self.is_task_feasible(tl, 'leader'):
+                        # Sample success based on success probability
+                        tl_done = self.rng.random() < self.task_prop['l_succ'][tl]
+                    else:
+                        tl_done = False
+            else:
+                tl, tl_done = 0, False  # Invalid action index
+        
+        # Simulate if task is completed by follower 1 (UR10)
+        if af1 == -1:
+            tf1, tf1_done = 0, False  # Follower 1 does nothing
+        else:
+            if 0 <= af1 < self.curr_board.shape[1]:  # Check if action is valid
+                tf1 = self.curr_board[0, af1]
+                if tf1 == 0:
+                    tf1_done = False  # Task already completed or invalid
+                else:
+                    # Check if task is within UR10's capabilities and workspace
+                    if self.is_task_feasible(tf1, 'follower1'):
+                        # Sample success based on success probability
+                        tf1_done = self.rng.random() < self.task_prop['f1_succ'][tf1]
+                    else:
+                        tf1_done = False
+            else:
+                tf1, tf1_done = 0, False  # Invalid action index
+        
+        # Simulate if task is completed by follower 2 (Kuka)
+        if af2 == -1:
+            tf2, tf2_done = 0, False  # Follower 2 does nothing
+        else:
+            if 0 <= af2 < self.curr_board.shape[1]:  # Check if action is valid
+                tf2 = self.curr_board[0, af2]
+                if tf2 == 0:
+                    tf2_done = False  # Task already completed or invalid
+                else:
+                    # Check if task is within Kuka's capabilities and workspace
+                    if self.is_task_feasible(tf2, 'follower2'):
+                        # Sample success based on success probability
+                        tf2_done = self.rng.random() < self.task_prop['f2_succ'][tf2]
+                    else:
+                        tf2_done = False
+            else:
+                tf2, tf2_done = 0, False  # Invalid action index
+        
+        # Update the task board based on the simulated results
+        self.update_board(tl, tl_done, tf1, tf1_done, tf2, tf2_done)
+        
+        # Update robot positions based on actions
+        if tl_done or al != -1:
+            self.update_robot_position('leader', al)
+        
+        if tf1_done or af1 != -1:
+            self.update_robot_position('follower1', af1)
+            
+        if tf2_done or af2 != -1:
+            self.update_robot_position('follower2', af2)
+        
+        # Increment time step
+        self.time_step += 1
+        
+        # Get rewards
+        rl, rf1, rf2 = self.reward(first_row, al, af1, af2)
+        
+        # Add shaped rewards based on tasks completed in this step
+        tasks_completed = len(self.completed_tasks) - initial_completed_tasks
+        rl += tasks_completed * self.reward_task_cleared
+        rf1 += tasks_completed * self.reward_task_cleared
+        rf2 += tasks_completed * self.reward_task_cleared
+        
+        # Add step penalty
+        rl -= self.reward_step_penalty
+        rf1 -= self.reward_step_penalty
+        rf2 -= self.reward_step_penalty
+        
+        # Check if the episode is done
+        done = self.is_done() or self.time_step >= self.max_time_steps
+        
+        # Get updated state
+        next_first_row, next_full_board = self.get_current_state()
+        
+        # Get action masks for the next state
+        leader_mask, follower1_mask, follower2_mask = self.get_action_masks()
+        
+        # Generate enhanced state
+        enhanced_state = self.get_enhanced_state()
+        
+        # Return the results
+        info = {
+            'action_masks': {
+                'leader': leader_mask,
+                'follower1': follower1_mask,
+                'follower2': follower2_mask
+            },
+            'tasks_completed': tasks_completed,
+            'total_completed': len(self.completed_tasks),
+            'time_step': self.time_step,
+            'enhanced_state': enhanced_state
+        }
+        
+        return next_first_row, next_full_board, rl, rf1, rf2, done, info
     
     def set_env(self, board: np.ndarray) -> None:
         """
@@ -378,129 +514,7 @@ class BatteryDisassemblyEnv:
         
         return first_row, full_board, info
     
-    def step(self, al: int, af1: int, af2: int) -> Tuple[np.ndarray, np.ndarray, float, float, float, bool, Dict]:
-        """
-        Execute one step in the environment based on all three robots' actions.
-        
-        Args:
-            al: Leader action (Franka robot), -1 for "do nothing"
-            af1: Follower 1 action (UR10 robot), -1 for "do nothing"
-            af2: Follower 2 action (Kuka robot), -1 for "do nothing"
-        
-        Returns:
-            Tuple containing:
-            - First row of the updated board
-            - Complete updated board
-            - Reward for the leader
-            - Reward for follower 1
-            - Reward for follower 2
-            - Whether the episode is done
-            - Dictionary with additional information
-        """
-        # Get the current state before acting
-        state, _ = self.get_current_state()
-        
-        # Store initial number of completed tasks
-        initial_completed_tasks = len(self.completed_tasks)
-        
-        # Simulate if task is completed by the leader (Franka)
-        if al == -1:
-            tl, tl_done = 0, False  # Leader does nothing
-        else:
-            tl = self.curr_board[0, al]
-            if tl == 0:
-                tl_done = False  # Task already completed or invalid
-            else:
-                # Check if task is within Franka's capabilities and workspace
-                if self.is_task_feasible(tl, 'leader'):
-                    # Sample success based on success probability
-                    tl_done = self.rng.random() < self.task_prop['l_succ'][tl]
-                else:
-                    tl_done = False
-        
-        # Simulate if task is completed by follower 1 (UR10)
-        if af1 == -1:
-            tf1, tf1_done = 0, False  # Follower 1 does nothing
-        else:
-            tf1 = self.curr_board[0, af1]
-            if tf1 == 0:
-                tf1_done = False  # Task already completed or invalid
-            else:
-                # Check if task is within UR10's capabilities and workspace
-                if self.is_task_feasible(tf1, 'follower1'):
-                    # Sample success based on success probability
-                    tf1_done = self.rng.random() < self.task_prop['f1_succ'][tf1]
-                else:
-                    tf1_done = False
-        
-        # Simulate if task is completed by follower 2 (Kuka)
-        if af2 == -1:
-            tf2, tf2_done = 0, False  # Follower 2 does nothing
-        else:
-            tf2 = self.curr_board[0, af2]
-            if tf2 == 0:
-                tf2_done = False  # Task already completed or invalid
-            else:
-                # Check if task is within Kuka's capabilities and workspace
-                if self.is_task_feasible(tf2, 'follower2'):
-                    # Sample success based on success probability
-                    tf2_done = self.rng.random() < self.task_prop['f2_succ'][tf2]
-                else:
-                    tf2_done = False
-        
-        # Update the task board based on the simulated results
-        self.update_board(tl, tl_done, tf1, tf1_done, tf2, tf2_done)
-        
-        # Update robot positions based on actions
-        if tl_done or al != -1:
-            self.update_robot_position('leader', al)
-        
-        if tf1_done or af1 != -1:
-            self.update_robot_position('follower1', af1)
-            
-        if tf2_done or af2 != -1:
-            self.update_robot_position('follower2', af2)
-        
-        # Increment time step
-        self.time_step += 1
-        
-        # Get rewards
-        rl, rf1, rf2 = self.reward(state, al, af1, af2)
-        
-        # Add shaped rewards based on tasks completed in this step
-        tasks_completed = len(self.completed_tasks) - initial_completed_tasks
-        rl += tasks_completed * self.reward_task_cleared
-        rf1 += tasks_completed * self.reward_task_cleared
-        rf2 += tasks_completed * self.reward_task_cleared
-        
-        # Add step penalty
-        rl -= self.reward_step_penalty
-        rf1 -= self.reward_step_penalty
-        rf2 -= self.reward_step_penalty
-        
-        # Check if the episode is done
-        done = self.is_done() or self.time_step >= self.max_time_steps
-        
-        # Get updated state
-        next_first_row, next_full_board = self.get_current_state()
-        
-        # Get action masks for the next state
-        leader_mask, follower1_mask, follower2_mask = self.get_action_masks()
-        
-        # Return the results
-        info = {
-            'action_masks': {
-                'leader': leader_mask,
-                'follower1': follower1_mask,
-                'follower2': follower2_mask
-            },
-            'tasks_completed': tasks_completed,
-            'total_completed': len(self.completed_tasks),
-            'time_step': self.time_step,
-            'enhanced_state': self.get_enhanced_state()
-        }
-        
-        return next_first_row, next_full_board, rl, rf1, rf2, done, info
+    
     
     def is_task_feasible(self, task_id: int, robot: str) -> bool:
         """
@@ -513,6 +527,10 @@ class BatteryDisassemblyEnv:
         Returns:
             Boolean indicating if the task is feasible
         """
+        # Check if task_id is valid
+        if task_id <= 0 or task_id >= len(self.task_prop['type']):
+            return False
+            
         # Check robot capability based on task type
         task_type = self.task_prop['type'][task_id]
         
@@ -660,7 +678,8 @@ class BatteryDisassemblyEnv:
                 # Mark the task as completed
                 row, col = positions[0][0], positions[1][0]
                 self.curr_board[row, col] = 0
-                self.completed_tasks.append(tf1)
+                if tf1 not in self.completed_tasks:  # Avoid double counting
+                    self.completed_tasks.append(tf1)
                 
                 # Check if a row is completed
                 if np.all(self.curr_board[row, :] == 0):
@@ -678,7 +697,8 @@ class BatteryDisassemblyEnv:
                 # Mark the task as completed
                 row, col = positions[0][0], positions[1][0]
                 self.curr_board[row, col] = 0
-                self.completed_tasks.append(tf2)
+                if tf2 not in self.completed_tasks:  # Avoid double counting
+                    self.completed_tasks.append(tf2)
                 
                 # Check if a row is completed
                 if np.all(self.curr_board[row, :] == 0):
@@ -690,66 +710,70 @@ class BatteryDisassemblyEnv:
         
         # Special case for collaborative tasks (type 4, 5, 6)
         # Collaborative task between followers (type 4)
-        if tf1 > 0 and tf2 > 0 and tf1 == tf2 and self.task_prop['type'][tf1] == 4:
-            # Both followers need to work on the same task
-            if tf1_done and tf2_done:
-                # Find the task on the board
-                positions = np.where(self.curr_board == tf1)
-                if len(positions[0]) > 0:
-                    # Mark the task as completed
-                    row, col = positions[0][0], positions[1][0]
-                    self.curr_board[row, col] = 0
-                    if tf1 not in self.completed_tasks:  # Avoid double counting
-                        self.completed_tasks.append(tf1)
-                    
-                    # Check if a row is completed
-                    if np.all(self.curr_board[row, :] == 0):
-                        # Shift rows above down
-                        for r in range(row, 0, -1):
-                            self.curr_board[r, :] = self.curr_board[r-1, :]
-                        # Clear the top row
-                        self.curr_board[0, :] = 0
+        if tf1 > 0 and tf2 > 0 and tf1 == tf2:
+            # Check if it's a type 4 task (collaborative between followers)
+            if self.task_prop['type'][tf1] == 4:
+                # Both followers need to work on the same task
+                if tf1_done and tf2_done:
+                    # Find the task on the board
+                    positions = np.where(self.curr_board == tf1)
+                    if len(positions[0]) > 0:
+                        # Mark the task as completed
+                        row, col = positions[0][0], positions[1][0]
+                        self.curr_board[row, col] = 0
+                        if tf1 not in self.completed_tasks:  # Avoid double counting
+                            self.completed_tasks.append(tf1)
+                        
+                        # Check if a row is completed
+                        if np.all(self.curr_board[row, :] == 0):
+                            # Shift rows above down
+                            for r in range(row, 0, -1):
+                                self.curr_board[r, :] = self.curr_board[r-1, :]
+                            # Clear the top row
+                            self.curr_board[0, :] = 0
         
         # Collaborative task between leader and a follower (type 5)
-        if tl > 0 and (tf1 == tl or tf2 == tl) and self.task_prop['type'][tl] == 5:
-            follower_done = (tf1 == tl and tf1_done) or (tf2 == tl and tf2_done)
-            if tl_done and follower_done:
-                # Find the task on the board
-                positions = np.where(self.curr_board == tl)
-                if len(positions[0]) > 0:
-                    # Mark the task as completed
-                    row, col = positions[0][0], positions[1][0]
-                    self.curr_board[row, col] = 0
-                    if tl not in self.completed_tasks:  # Avoid double counting
-                        self.completed_tasks.append(tl)
-                    
-                    # Check if a row is completed
-                    if np.all(self.curr_board[row, :] == 0):
-                        # Shift rows above down
-                        for r in range(row, 0, -1):
-                            self.curr_board[r, :] = self.curr_board[r-1, :]
-                        # Clear the top row
-                        self.curr_board[0, :] = 0
+        if tl > 0 and (tf1 == tl or tf2 == tl):
+            if self.task_prop['type'][tl] == 5:
+                follower_done = (tf1 == tl and tf1_done) or (tf2 == tl and tf2_done)
+                if tl_done and follower_done:
+                    # Find the task on the board
+                    positions = np.where(self.curr_board == tl)
+                    if len(positions[0]) > 0:
+                        # Mark the task as completed
+                        row, col = positions[0][0], positions[1][0]
+                        self.curr_board[row, col] = 0
+                        if tl not in self.completed_tasks:  # Avoid double counting
+                            self.completed_tasks.append(tl)
+                        
+                        # Check if a row is completed
+                        if np.all(self.curr_board[row, :] == 0):
+                            # Shift rows above down
+                            for r in range(row, 0, -1):
+                                self.curr_board[r, :] = self.curr_board[r-1, :]
+                            # Clear the top row
+                            self.curr_board[0, :] = 0
         
         # Complex tasks requiring all three robots (type 6)
-        if tl > 0 and tf1 > 0 and tf2 > 0 and tl == tf1 and tl == tf2 and self.task_prop['type'][tl] == 6:
-            if tl_done and tf1_done and tf2_done:
-                # Find the task on the board
-                positions = np.where(self.curr_board == tl)
-                if len(positions[0]) > 0:
-                    # Mark the task as completed
-                    row, col = positions[0][0], positions[1][0]
-                    self.curr_board[row, col] = 0
-                    if tl not in self.completed_tasks:  # Avoid double counting
-                        self.completed_tasks.append(tl)
-                    
-                    # Check if a row is completed
-                    if np.all(self.curr_board[row, :] == 0):
-                        # Shift rows above down
-                        for r in range(row, 0, -1):
-                            self.curr_board[r, :] = self.curr_board[r-1, :]
-                        # Clear the top row
-                        self.curr_board[0, :] = 0
+        if tl > 0 and tf1 > 0 and tf2 > 0 and tl == tf1 and tl == tf2:
+            if self.task_prop['type'][tl] == 6:
+                if tl_done and tf1_done and tf2_done:
+                    # Find the task on the board
+                    positions = np.where(self.curr_board == tl)
+                    if len(positions[0]) > 0:
+                        # Mark the task as completed
+                        row, col = positions[0][0], positions[1][0]
+                        self.curr_board[row, col] = 0
+                        if tl not in self.completed_tasks:  # Avoid double counting
+                            self.completed_tasks.append(tl)
+                        
+                        # Check if a row is completed
+                        if np.all(self.curr_board[row, :] == 0):
+                            # Shift rows above down
+                            for r in range(row, 0, -1):
+                                self.curr_board[r, :] = self.curr_board[r-1, :]
+                            # Clear the top row
+                            self.curr_board[0, :] = 0
     
     def reward(self, state: np.ndarray, al: int, af1: int, af2: int) -> Tuple[float, float, float]:
         """
@@ -779,9 +803,10 @@ class BatteryDisassemblyEnv:
             # Exception for collaborative tasks
             if al != -1 and al != af1:
                 # Check if it's a collaborative task (type 4)
-                task_id = self.curr_board[0, af1]
-                if task_id > 0 and self.task_prop['type'][task_id] != 4:
-                    collision = True
+                if af1 < len(state) and af1 >= 0:  # Ensure index is valid
+                    task_id = self.curr_board[0, af1]
+                    if task_id > 0 and self.task_prop['type'][task_id] != 4:
+                        collision = True
         
         # Apply collision penalty if applicable
         if collision:
@@ -791,45 +816,63 @@ class BatteryDisassemblyEnv:
         
         # Reward for attempting appropriate tasks based on robot capabilities
         if al != -1:
-            task_id = self.curr_board[0, al]
-            if task_id > 0:
-                task_type = self.task_prop['type'][task_id]
-                # Leader is good at type 1, 5, and 6 tasks
-                if task_type == 1:
-                    rl += 0.2
-                elif task_type == 5 or task_type == 6:
-                    rl += 0.1
+            if al < len(state) and al >= 0:  # Ensure index is valid
+                task_id = self.curr_board[0, al]
+                if task_id > 0:
+                    task_type = self.task_prop['type'][task_id]
+                    # Leader is good at type 1, 5, and 6 tasks
+                    if task_type == 1:
+                        rl += 0.2
+                    elif task_type == 5 or task_type == 6:
+                        rl += 0.1
         
         if af1 != -1:
-            task_id = self.curr_board[0, af1]
-            if task_id > 0:
-                task_type = self.task_prop['type'][task_id]
-                # Follower 1 is good at type 2, 4, 5, and 6 tasks
-                if task_type == 2:
-                    rf1 += 0.2
-                elif task_type == 4 or task_type == 5 or task_type == 6:
-                    rf1 += 0.1
+            if af1 < len(state) and af1 >= 0:  # Ensure index is valid
+                task_id = self.curr_board[0, af1]
+                if task_id > 0:
+                    task_type = self.task_prop['type'][task_id]
+                    # Follower 1 is good at type 2, 4, 5, and 6 tasks
+                    if task_type == 2:
+                        rf1 += 0.2
+                    elif task_type == 4 or task_type == 5 or task_type == 6:
+                        rf1 += 0.1
         
         if af2 != -1:
-            task_id = self.curr_board[0, af2]
-            if task_id > 0:
-                task_type = self.task_prop['type'][task_id]
-                # Follower 2 is good at type 3, 4, 5, and 6 tasks
-                if task_type == 3:
-                    rf2 += 0.2
-                elif task_type == 4 or task_type == 5 or task_type == 6:
-                    rf2 += 0.1
+            if af2 < len(state) and af2 >= 0:  # Ensure index is valid
+                task_id = self.curr_board[0, af2]
+                if task_id > 0:
+                    task_type = self.task_prop['type'][task_id]
+                    # Follower 2 is good at type 3, 4, 5, and 6 tasks
+                    if task_type == 3:
+                        rf2 += 0.2
+                    elif task_type == 4 or task_type == 5 or task_type == 6:
+                        rf2 += 0.1
         
         # Check if a row was completed (by comparing previous state with current)
-        rows_before = np.count_nonzero(np.any(state > 0, axis=1))
-        rows_after = np.count_nonzero(np.any(self.curr_board > 0, axis=1))
-        
-        if rows_after < rows_before:
-            # Row completion bonus
-            row_bonus = self.reward_row_bonus
-            rl += row_bonus
-            rf1 += row_bonus
-            rf2 += row_bonus
+        # FIX: Handle different state formats (1D vector or 2D board)
+        if len(state.shape) == 1:  # If using enhanced state or flattened state
+            # We can't easily check row completion from a flattened state
+            # Instead, use the current board state to check if any row was completed this step
+            rows_with_tasks = np.sum(np.any(self.curr_board > 0, axis=1))
+            if hasattr(self, '_prev_rows_with_tasks'):
+                if rows_with_tasks < self._prev_rows_with_tasks:
+                    # Row completion bonus
+                    row_bonus = self.reward_row_bonus
+                    rl += row_bonus
+                    rf1 += row_bonus
+                    rf2 += row_bonus
+            # Store for next time
+            self._prev_rows_with_tasks = rows_with_tasks
+        else:  # If using original board state format
+            rows_before = np.count_nonzero(np.any(state > 0, axis=1))
+            rows_after = np.count_nonzero(np.any(self.curr_board > 0, axis=1))
+            
+            if rows_after < rows_before:
+                # Row completion bonus
+                row_bonus = self.reward_row_bonus
+                rl += row_bonus
+                rf1 += row_bonus
+                rf2 += row_bonus
         
         return rl, rf1, rf2
 
