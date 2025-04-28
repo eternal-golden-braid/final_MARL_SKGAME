@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 897, in <module>
+    agent, stats = train(args)
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 386, in train
+    leader_action, follower1_action, follower2_action = agent.act(state_to_use, action_masks)
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 359, in act
+    return self.compute_stackelberg_equilibrium(state, action_masks)
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 258, in compute_stackelberg_equilibrium
+    leader_q_values, self.leader_hidden = self.leader_online.get_q_values(
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 124, in get_q_values
+    q_values, new_hidden_state = self.forward(state, hidden_state)
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 91, in forward
+    features = self.feature_extractor(state.reshape(-1, self.input_dim))
+RuntimeError: shape '[-1, 4]' is invalid for input of size 49

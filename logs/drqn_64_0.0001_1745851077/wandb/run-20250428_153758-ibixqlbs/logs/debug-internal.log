@@ -1,0 +1,15 @@
+{"time":"2025-04-28T15:37:58.035331299+01:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"logs/drqn_64_0.0001_1745851077/wandb/run-20250428_153758-ibixqlbs/logs/debug-core.log"}
+{"time":"2025-04-28T15:37:58.301744833+01:00","level":"INFO","msg":"created new stream","id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:58.301792586+01:00","level":"INFO","msg":"stream: started","id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:58.301804653+01:00","level":"INFO","msg":"handler: started","stream_id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:58.301861494+01:00","level":"INFO","msg":"sender: started","stream_id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:58.30187691+01:00","level":"INFO","msg":"writer: Do: started","stream_id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:58.624891214+01:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-28T15:37:58.70374546+01:00","level":"INFO","msg":"stream: closing","id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:58.703768511+01:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-28T15:37:58.703834527+01:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-28T15:37:59.71699308+01:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-28T15:37:59.946876707+01:00","level":"INFO","msg":"handler: closed","stream_id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:59.946904088+01:00","level":"INFO","msg":"writer: Close: closed","stream_id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:59.946934642+01:00","level":"INFO","msg":"sender: closed","stream_id":"ibixqlbs"}
+{"time":"2025-04-28T15:37:59.946949174+01:00","level":"INFO","msg":"stream: closed","id":"ibixqlbs"}

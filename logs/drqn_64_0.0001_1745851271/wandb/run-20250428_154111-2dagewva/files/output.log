@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 906, in <module>
+    agent, stats = train(args)
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 395, in train
+    leader_action, follower1_action, follower2_action = agent.act(state_to_use, action_masks)
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 359, in act
+    return self.compute_stackelberg_equilibrium(state, action_masks)
+  File "/home/alien/Code/stackleberg_game/MARL/agents/drqn_agent.py", line 297, in compute_stackelberg_equilibrium
+    if leader_value > best_leader_value:
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()

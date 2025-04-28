@@ -232,7 +232,7 @@ class StackelbergDRQNAgent(BaseAgent):
         self.follower2_hidden = None
     
     def compute_stackelberg_equilibrium(self, state: np.ndarray, 
-                                       action_masks: Optional[Dict[str, np.ndarray]] = None) -> Tuple[int, int, int]:
+                                   action_masks: Optional[Dict[str, np.ndarray]] = None) -> Tuple[int, int, int]:
         """
         Compute Stackelberg equilibrium using the current Q-networks.
         In this hierarchy: Leader -> (Follower1, Follower2)
@@ -272,16 +272,21 @@ class StackelbergDRQNAgent(BaseAgent):
         follower1_q = follower1_q_values.detach().cpu().numpy()
         follower2_q = follower2_q_values.detach().cpu().numpy()
         
-        # Note: Original implementation had a structure like:
-        # For each potential leader action, compute the Nash equilibrium between the followers
-        # with iterative best response. I'm keeping this structure unchanged to maintain
-        # the DRQN's behavior.
+        # Make sure leader_q is 1D
+        if len(leader_q.shape) > 1:
+            leader_q = leader_q.flatten()
         
         # For each potential leader action, compute the Nash equilibrium between the followers
         best_leader_value = float('-inf')
         leader_se_action = 0
         follower1_se_action = 0
         follower2_se_action = 0
+        
+        # Ensure follower Q values are 1D
+        if len(follower1_q.shape) > 1:
+            follower1_q = follower1_q.flatten()
+        if len(follower2_q.shape) > 1:
+            follower2_q = follower2_q.flatten()
         
         for a_l in range(self.action_dim_leader):
             if not leader_mask[a_l].item():
@@ -292,7 +297,16 @@ class StackelbergDRQNAgent(BaseAgent):
             f2_action = np.argmax(follower2_q)
             
             # Evaluate leader's utility with these follower actions
-            leader_value = leader_q[a_l]
+            # Handle the case where leader_q might be multi-dimensional
+            if isinstance(leader_q, np.ndarray) and leader_q.size > self.action_dim_leader:
+                # For batched inputs, we need to extract the correct element
+                if a_l < leader_q.size:  # Make sure index is valid
+                    leader_value = float(leader_q[a_l])
+                else:
+                    continue  # Skip this action if index is out of bounds
+            else:
+                # Simple case for 1D array
+                leader_value = float(leader_q[a_l])
             
             if leader_value > best_leader_value:
                 best_leader_value = leader_value
@@ -303,7 +317,7 @@ class StackelbergDRQNAgent(BaseAgent):
         # Convert from index to actual action (-1 to n-2, where n is action_dim)
         # Note: This assumes the first action (index 0) corresponds to "do nothing" (-1)
         return leader_se_action - 1, follower1_se_action - 1, follower2_se_action - 1
-    
+        
     def act(self, state: np.ndarray, action_masks: Optional[Dict[str, np.ndarray]] = None, 
             epsilon: Optional[float] = None) -> Tuple[int, int, int]:
         """

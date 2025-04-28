@@ -105,7 +105,16 @@ def create_agent(args, env):
     """
     # Get environment information
     env_info = env.get_task_info()
-    state_dim = env_info['dims']
+    
+    # Get initial state to determine actual state dimension
+    _, _, info = env.reset_env()
+    if 'enhanced_state' in info:
+        # Use the enhanced state dimension
+        state_dim = info['enhanced_state'].shape[0]
+    else:
+        # Use the original state dimension
+        state_dim = env_info['dims']
+    
     action_dim_leader = env_info['dimAl']
     action_dim_follower1 = env_info['dimAf1']
     action_dim_follower2 = env_info['dimAf2']

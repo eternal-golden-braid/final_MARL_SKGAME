@@ -621,3 +621,322 @@ class BatteryDisassemblyEnv:
         elif robot == 'follower2':
             # Move Kuka to the task position
             self.kuka_state['position'] = task_pos
+        
+    def update_board(self, tl: int, tl_done: bool, tf1: int, tf1_done: bool, tf2: int, tf2_done: bool) -> None:
+        """
+        Update the task board based on completed tasks.
+        
+        Args:
+            tl: Task ID attempted by the leader
+            tl_done: Whether the leader completed the task
+            tf1: Task ID attempted by follower 1
+            tf1_done: Whether follower 1 completed the task
+            tf2: Task ID attempted by follower 2
+            tf2_done: Whether follower 2 completed the task
+        """
+        # Process leader's task
+        if tl > 0 and tl_done:
+            # Find the task on the board
+            positions = np.where(self.curr_board == tl)
+            if len(positions[0]) > 0:
+                # Mark the task as completed
+                row, col = positions[0][0], positions[1][0]
+                self.curr_board[row, col] = 0
+                self.completed_tasks.append(tl)
+                
+                # Check if a row is completed
+                if np.all(self.curr_board[row, :] == 0):
+                    # Shift rows above down
+                    for r in range(row, 0, -1):
+                        self.curr_board[r, :] = self.curr_board[r-1, :]
+                    # Clear the top row
+                    self.curr_board[0, :] = 0
+        
+        # Process follower 1's task
+        if tf1 > 0 and tf1_done:
+            # Find the task on the board
+            positions = np.where(self.curr_board == tf1)
+            if len(positions[0]) > 0:
+                # Mark the task as completed
+                row, col = positions[0][0], positions[1][0]
+                self.curr_board[row, col] = 0
+                self.completed_tasks.append(tf1)
+                
+                # Check if a row is completed
+                if np.all(self.curr_board[row, :] == 0):
+                    # Shift rows above down
+                    for r in range(row, 0, -1):
+                        self.curr_board[r, :] = self.curr_board[r-1, :]
+                    # Clear the top row
+                    self.curr_board[0, :] = 0
+        
+        # Process follower 2's task
+        if tf2 > 0 and tf2_done:
+            # Find the task on the board
+            positions = np.where(self.curr_board == tf2)
+            if len(positions[0]) > 0:
+                # Mark the task as completed
+                row, col = positions[0][0], positions[1][0]
+                self.curr_board[row, col] = 0
+                self.completed_tasks.append(tf2)
+                
+                # Check if a row is completed
+                if np.all(self.curr_board[row, :] == 0):
+                    # Shift rows above down
+                    for r in range(row, 0, -1):
+                        self.curr_board[r, :] = self.curr_board[r-1, :]
+                    # Clear the top row
+                    self.curr_board[0, :] = 0
+        
+        # Special case for collaborative tasks (type 4, 5, 6)
+        # Collaborative task between followers (type 4)
+        if tf1 > 0 and tf2 > 0 and tf1 == tf2 and self.task_prop['type'][tf1] == 4:
+            # Both followers need to work on the same task
+            if tf1_done and tf2_done:
+                # Find the task on the board
+                positions = np.where(self.curr_board == tf1)
+                if len(positions[0]) > 0:
+                    # Mark the task as completed
+                    row, col = positions[0][0], positions[1][0]
+                    self.curr_board[row, col] = 0
+                    if tf1 not in self.completed_tasks:  # Avoid double counting
+                        self.completed_tasks.append(tf1)
+                    
+                    # Check if a row is completed
+                    if np.all(self.curr_board[row, :] == 0):
+                        # Shift rows above down
+                        for r in range(row, 0, -1):
+                            self.curr_board[r, :] = self.curr_board[r-1, :]
+                        # Clear the top row
+                        self.curr_board[0, :] = 0
+        
+        # Collaborative task between leader and a follower (type 5)
+        if tl > 0 and (tf1 == tl or tf2 == tl) and self.task_prop['type'][tl] == 5:
+            follower_done = (tf1 == tl and tf1_done) or (tf2 == tl and tf2_done)
+            if tl_done and follower_done:
+                # Find the task on the board
+                positions = np.where(self.curr_board == tl)
+                if len(positions[0]) > 0:
+                    # Mark the task as completed
+                    row, col = positions[0][0], positions[1][0]
+                    self.curr_board[row, col] = 0
+                    if tl not in self.completed_tasks:  # Avoid double counting
+                        self.completed_tasks.append(tl)
+                    
+                    # Check if a row is completed
+                    if np.all(self.curr_board[row, :] == 0):
+                        # Shift rows above down
+                        for r in range(row, 0, -1):
+                            self.curr_board[r, :] = self.curr_board[r-1, :]
+                        # Clear the top row
+                        self.curr_board[0, :] = 0
+        
+        # Complex tasks requiring all three robots (type 6)
+        if tl > 0 and tf1 > 0 and tf2 > 0 and tl == tf1 and tl == tf2 and self.task_prop['type'][tl] == 6:
+            if tl_done and tf1_done and tf2_done:
+                # Find the task on the board
+                positions = np.where(self.curr_board == tl)
+                if len(positions[0]) > 0:
+                    # Mark the task as completed
+                    row, col = positions[0][0], positions[1][0]
+                    self.curr_board[row, col] = 0
+                    if tl not in self.completed_tasks:  # Avoid double counting
+                        self.completed_tasks.append(tl)
+                    
+                    # Check if a row is completed
+                    if np.all(self.curr_board[row, :] == 0):
+                        # Shift rows above down
+                        for r in range(row, 0, -1):
+                            self.curr_board[r, :] = self.curr_board[r-1, :]
+                        # Clear the top row
+                        self.curr_board[0, :] = 0
+    
+    def reward(self, state: np.ndarray, al: int, af1: int, af2: int) -> Tuple[float, float, float]:
+        """
+        Calculate rewards for all three robots based on their actions.
+        
+        Args:
+            state: State before taking actions
+            al: Leader action
+            af1: Follower 1 action
+            af2: Follower 2 action
+        
+        Returns:
+            Tuple of rewards for leader, follower1, and follower2
+        """
+        # Base reward (small penalty for each step)
+        rl = -self.reward_step_penalty
+        rf1 = -self.reward_step_penalty
+        rf2 = -self.reward_step_penalty
+        
+        # Check if there was a collision in action selection (multiple robots choosing the same task)
+        collision = False
+        if al != -1 and af1 == al:
+            collision = True
+        if al != -1 and af2 == al:
+            collision = True
+        if af1 != -1 and af2 == af1:
+            # Exception for collaborative tasks
+            if al != -1 and al != af1:
+                # Check if it's a collaborative task (type 4)
+                task_id = self.curr_board[0, af1]
+                if task_id > 0 and self.task_prop['type'][task_id] != 4:
+                    collision = True
+        
+        # Apply collision penalty if applicable
+        if collision:
+            rl -= self.reward_collision_penalty
+            rf1 -= self.reward_collision_penalty
+            rf2 -= self.reward_collision_penalty
+        
+        # Reward for attempting appropriate tasks based on robot capabilities
+        if al != -1:
+            task_id = self.curr_board[0, al]
+            if task_id > 0:
+                task_type = self.task_prop['type'][task_id]
+                # Leader is good at type 1, 5, and 6 tasks
+                if task_type == 1:
+                    rl += 0.2
+                elif task_type == 5 or task_type == 6:
+                    rl += 0.1
+        
+        if af1 != -1:
+            task_id = self.curr_board[0, af1]
+            if task_id > 0:
+                task_type = self.task_prop['type'][task_id]
+                # Follower 1 is good at type 2, 4, 5, and 6 tasks
+                if task_type == 2:
+                    rf1 += 0.2
+                elif task_type == 4 or task_type == 5 or task_type == 6:
+                    rf1 += 0.1
+        
+        if af2 != -1:
+            task_id = self.curr_board[0, af2]
+            if task_id > 0:
+                task_type = self.task_prop['type'][task_id]
+                # Follower 2 is good at type 3, 4, 5, and 6 tasks
+                if task_type == 3:
+                    rf2 += 0.2
+                elif task_type == 4 or task_type == 5 or task_type == 6:
+                    rf2 += 0.1
+        
+        # Check if a row was completed (by comparing previous state with current)
+        rows_before = np.count_nonzero(np.any(state > 0, axis=1))
+        rows_after = np.count_nonzero(np.any(self.curr_board > 0, axis=1))
+        
+        if rows_after < rows_before:
+            # Row completion bonus
+            row_bonus = self.reward_row_bonus
+            rl += row_bonus
+            rf1 += row_bonus
+            rf2 += row_bonus
+        
+        return rl, rf1, rf2
+
+    def is_done(self) -> bool:
+        """
+        Check if the episode is done (all tasks completed).
+        
+        Returns:
+            Boolean indicating if the episode is done
+        """
+        # Episode is done when all cells in the task board are empty (0)
+        return np.all(self.curr_board == 0)
+
+    def render(self, ax=None):
+        """
+        Render the environment.
+        
+        Args:
+            ax: Matplotlib axis for rendering, if None, a new one will be created
+        """
+        if ax is None:
+            fig = plt.figure(figsize=(12, 10))
+            ax = fig.add_subplot(111, projection='3d')
+        
+        # Clear the axis
+        ax.clear()
+        
+        # Set up the plot
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title('Battery Disassembly Environment')
+        ax.set_xlim([-1, 1])
+        ax.set_ylim([-1, 1])
+        ax.set_zlim([0, 1])
+        
+        # Plot the battery module
+        ax.scatter(self.battery_pos[0], self.battery_pos[1], self.battery_pos[2], 
+                color='gray', s=200, label='Battery Module')
+        
+        # Plot the task board
+        board_height, board_width = self.curr_board.shape
+        for row in range(board_height):
+            for col in range(board_width):
+                task_id = self.curr_board[row, col]
+                if task_id > 0:
+                    # Get task position
+                    task_pos = self.get_task_position(task_id)
+                    if task_pos is not None:
+                        # Color based on task type
+                        task_type = self.task_prop['type'][task_id]
+                        color = 'blue'  # Default
+                        if task_type == 1:
+                            color = 'red'  # Leader tasks
+                        elif task_type == 2:
+                            color = 'green'  # Follower 1 tasks
+                        elif task_type == 3:
+                            color = 'purple'  # Follower 2 tasks
+                        elif task_type == 4:
+                            color = 'orange'  # Collaborative tasks (followers)
+                        elif task_type == 5:
+                            color = 'brown'  # Collaborative tasks (leader + follower)
+                        elif task_type == 6:
+                            color = 'black'  # Complex tasks (all three robots)
+                        
+                        # Plot the task
+                        ax.scatter(task_pos[0], task_pos[1], task_pos[2], 
+                                color=color, s=100, alpha=0.7)
+                        
+                        # Add task ID label
+                        ax.text(task_pos[0], task_pos[1], task_pos[2], 
+                            str(task_id), color='white', fontsize=8, 
+                            horizontalalignment='center', verticalalignment='center')
+        
+        # Plot the robots
+        ax.scatter(self.franka_state['position'][0], self.franka_state['position'][1], self.franka_state['position'][2], 
+                color='red', s=150, label='Franka (Leader)')
+        ax.scatter(self.ur10_state['position'][0], self.ur10_state['position'][1], self.ur10_state['position'][2], 
+                color='green', s=150, label='UR10 (Follower 1)')
+        ax.scatter(self.kuka_state['position'][0], self.kuka_state['position'][1], self.kuka_state['position'][2], 
+                color='purple', s=150, label='Kuka (Follower 2)')
+        
+        # Plot the bins
+        for bin_name, bin_pos in self.bin_positions.items():
+            ax.scatter(bin_pos[0], bin_pos[1], bin_pos[2], 
+                    color='cyan', s=100, alpha=0.5)
+            ax.text(bin_pos[0], bin_pos[1], bin_pos[2] + 0.05, 
+                bin_name, color='black', fontsize=8, 
+                horizontalalignment='center')
+        
+        # Add legend
+        ax.legend()
+        
+        # Add episode info
+        info_text = f"Time Step: {self.time_step}\n"
+        info_text += f"Tasks Completed: {len(self.completed_tasks)}\n"
+        info_text += f"Remaining Tasks: {np.count_nonzero(self.curr_board > 0)}\n"
+        
+        # Add robot states
+        info_text += f"\nFranka: {'Gripper Closed' if not self.franka_state['gripper_open'] else 'Gripper Open'}\n"
+        info_text += f"UR10: {'Suction Active' if self.ur10_state['suction_active'] else 'Suction Inactive'}\n"
+        info_text += f"Kuka: {'Tool Active' if self.kuka_state['tool_active'] else 'Tool Inactive'}\n"
+        
+        # Add text annotation
+        ax.text2D(0.02, 0.95, info_text, transform=ax.transAxes, fontsize=10, bbox=dict(facecolor='white', alpha=0.5))
+        
+        # Draw and update
+        plt.draw()
+        
+        return ax

@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 906, in <module>
+    agent, stats = train(args)
+  File "/home/alien/Code/stackleberg_game/MARL/train.py", line 398, in train
+    next_state, _, rl, rf1, rf2, done, info = env.step(leader_action, follower1_action, follower2_action)
+  File "/home/alien/Code/stackleberg_game/MARL/env/battery_disassembly_env.py", line 452, in step
+    self.update_board(tl, tl_done, tf1, tf1_done, tf2, tf2_done)
+AttributeError: 'BatteryDisassemblyEnv' object has no attribute 'update_board'
